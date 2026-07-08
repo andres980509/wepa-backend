@@ -36,6 +36,7 @@ public class Database {
                     .locations("classpath:db/migration")
                     .baselineOnMigrate(true)
                     .baselineVersion("0")
+                    .schemas("public")
                     .load()
                     .migrate();
         }
