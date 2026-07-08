@@ -1,0 +1,289 @@
+openapi: 3.0.3
+info:
+  title: WEPA Mobile API
+  version: 1.0.0
+  description: API versionada para app Flutter Android/iOS.
+servers:
+  - url: http://localhost:8080/api/mobile/v1
+security:
+  - bearerAuth: []
+paths:
+  /login:
+    post:
+      security: []
+      summary: Login movil
+      description: Solo usuarios con rol INTEGRANTE e integrante_id asociado pueden entrar a la app.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+                device_name:
+                  type: string
+      responses:
+        "200":
+          description: Tokens emitidos
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                  refresh_token:
+                    type: string
+                  user:
+                    $ref: "#/components/schemas/MobileUser"
+  /refresh:
+    post:
+      security: []
+      summary: Renovar access token
+      responses:
+        "200":
+          description: Access token renovado
+  /perfil:
+    get:
+      summary: Perfil del usuario autenticado
+      responses:
+        "200":
+          description: Perfil
+  /pagos:
+    get:
+      summary: Estado de cuenta por integrante
+      description: El integrante se resuelve desde el JWT movil.
+      responses:
+        "200":
+          description: Obligaciones y abonos
+  /pagos/pendientes:
+    get:
+      summary: Pagos pendientes por integrante
+      description: El integrante se resuelve desde el JWT movil.
+      responses:
+        "200":
+          description: Obligaciones pendientes
+  /pagos/movimientos:
+    get:
+      summary: Movimientos del integrante autenticado
+      responses:
+        "200":
+          description: Historial financiero movil
+  /payments/transfer:
+    get:
+      summary: Transferencias del integrante autenticado
+      responses:
+        "200":
+          description: Lista de pagos por transferencia
+    post:
+      summary: Enviar soporte de pago por transferencia
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [obligacion_id, amount, reference, support]
+              properties:
+                obligacion_id:
+                  type: integer
+                amount:
+                  type: number
+                method:
+                  type: string
+                  default: Transferencia bancaria
+                bank:
+                  type: string
+                reference:
+                  type: string
+                support:
+                  type: string
+                  format: binary
+      responses:
+        "201":
+          description: Transferencia creada en PENDING_VERIFICATION
+  /payments/transfer/{id}/support:
+    get:
+      summary: Soporte autenticado de transferencia
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Archivo de soporte
+  /payments/transfer/{id}/receipt:
+    get:
+      summary: Recibo PDF de transferencia aprobada
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Recibo PDF
+  /qr-nfc/{codigo}:
+    get:
+      summary: Consulta integrante por codigo QR/NFC
+      parameters:
+        - in: path
+          name: codigo
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Integrante encontrado
+  /documentos:
+    get:
+      summary: Documentos del integrante autenticado
+      responses:
+        "200":
+          description: Lista documental
+    post:
+      summary: Subir documento del integrante autenticado
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                tipo_documento:
+                  type: string
+                folder_path:
+                  type: string
+                fecha_vencimiento:
+                  type: string
+                  format: date
+                observaciones:
+                  type: string
+      responses:
+        "201":
+          description: Documento cargado
+  /documentos/{id}/preview:
+    get:
+      summary: Preview autenticado de documento propio
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Archivo inline
+  /documentos/{id}/download:
+    get:
+      summary: Descarga autenticada de documento propio
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Archivo descargable
+  /documentos/{entidadTipo}/{entidadId}:
+    get:
+      summary: Documentos por entidad legacy movil
+      description: Compatible con clientes anteriores; integrantes siguen limitados a su propio registro.
+      parameters:
+        - in: path
+          name: entidadTipo
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: entidadId
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Lista documental
+  /asistencia:
+    get:
+      summary: Asistencia movil
+      responses:
+        "200":
+          description: Placeholder versionado para eventos de asistencia
+  /notificaciones:
+    get:
+      summary: Notificaciones push
+      responses:
+        "200":
+          description: Notificaciones disponibles para el integrante autenticado
+  /push-token:
+    post:
+      summary: Registrar token push FCM/APNs del dispositivo
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PushTokenRequest"
+      responses:
+        "200":
+          description: Dispositivo registrado para push
+    delete:
+      summary: Desactivar token push del dispositivo
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PushTokenRequest"
+      responses:
+        "200":
+          description: Dispositivo desactivado
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    MobileUser:
+      type: object
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        rol:
+          type: string
+        integrante_id:
+          type: integer
+          nullable: true
+    PushTokenRequest:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+        provider:
+          type: string
+          enum: [FCM, APNS]
+          default: FCM
+        platform:
+          type: string
+          enum: [ANDROID, IOS]
+        device_name:
+          type: string
+        app_version:
+          type: string

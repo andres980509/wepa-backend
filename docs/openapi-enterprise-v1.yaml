@@ -1,0 +1,416 @@
+openapi: 3.0.3
+info:
+  title: WEPA Enterprise API
+  version: 1.0.0
+  description: Endpoints enterprise para documental, pagos, RBAC y auditoria.
+servers:
+  - url: http://localhost:8080/api
+security:
+  - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    PageResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+        page:
+          type: integer
+        size:
+          type: integer
+        total:
+          type: integer
+    PaymentInitRequest:
+      type: object
+      required: [provider, obligacion_id, amount]
+      properties:
+        provider:
+          type: string
+          enum: [WOMPI, EPAYCO, MERCADOPAGO]
+        obligacion_id:
+          type: integer
+        amount:
+          type: number
+        currency:
+          type: string
+          default: COP
+        method:
+          type: string
+          enum: [PSE, CARD]
+        payer_email:
+          type: string
+        payer_document:
+          type: string
+    MobileUserRequest:
+      type: object
+      properties:
+        username:
+          type: string
+          description: Si se omite, se genera desde el documento o id del integrante.
+        password:
+          type: string
+          description: Si se omite, se genera una contrasena temporal.
+        email:
+          type: string
+        telefono:
+          type: string
+    MobileUserStatusRequest:
+      type: object
+      required: [activo]
+      properties:
+        activo:
+          type: boolean
+    PasswordResetRequest:
+      type: object
+      properties:
+        password:
+          type: string
+          description: Si se omite, se genera una contrasena temporal.
+    PaymentTransferReviewRequest:
+      type: object
+      properties:
+        observations:
+          type: string
+paths:
+  /admin/integrantes/{id}/usuario:
+    get:
+      summary: Consultar el usuario movil asociado a un integrante.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Usuario movil asociado o estado sin usuario.
+    post:
+      summary: Crear usuario movil INTEGRANTE y asociarlo explicitamente al integrante.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MobileUserRequest"
+      responses:
+        "201":
+          description: Usuario movil creado y credenciales temporales devueltas.
+    delete:
+      summary: Desasociar logicamente el usuario movil de un integrante.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Asociacion removida.
+  /admin/integrantes/{id}/usuario/estado:
+    patch:
+      summary: Activar o desactivar el usuario movil de un integrante.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MobileUserStatusRequest"
+      responses:
+        "200":
+          description: Estado del usuario actualizado.
+  /admin/integrantes/{id}/usuario/password:
+    patch:
+      summary: Restablecer la contrasena del usuario movil de un integrante.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordResetRequest"
+      responses:
+        "200":
+          description: Contrasena temporal devuelta para entrega segura al integrante.
+  /admin/integrantes/{id}/foto:
+    get:
+      summary: Obtener foto autenticada del integrante.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Imagen del integrante.
+    patch:
+      summary: Actualizar foto del integrante.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [foto]
+              properties:
+                foto:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: Foto actualizada.
+  /documentos/search:
+    get:
+      summary: Buscar documentos con filtros y paginacion server-side.
+      parameters:
+        - in: query
+          name: entidad_tipo
+          schema: { type: string }
+        - in: query
+          name: entidad_id
+          schema: { type: integer }
+        - in: query
+          name: tipo_documento
+          schema: { type: string }
+        - in: query
+          name: estado
+          schema: { type: string, enum: [PENDIENTE, VALIDADO, RECHAZADO, VENCIDO] }
+        - in: query
+          name: nombre
+          schema: { type: string }
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+        - in: query
+          name: size
+          schema: { type: integer, default: 25 }
+      responses:
+        "200":
+          description: Pagina documental.
+  /documentos:
+    post:
+      summary: Subir documento versionado.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, entidad_tipo, entidad_id, tipo_documento]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                entidad_tipo:
+                  type: string
+                entidad_id:
+                  type: integer
+                tipo_documento:
+                  type: string
+                folder_path:
+                  type: string
+                fecha_vencimiento:
+                  type: string
+                  format: date
+      responses:
+        "201":
+          description: Documento creado.
+  /documentos/dashboard:
+    get:
+      summary: Indicadores documentales.
+      responses:
+        "200":
+          description: Totales por estado.
+  /documentos/tipos:
+    get:
+      summary: Listar tipos documentales.
+      responses:
+        "200":
+          description: Tipos activos.
+    post:
+      summary: Crear o actualizar tipo documental.
+      responses:
+        "201":
+          description: Tipo creado.
+  /documentos/{id}/validar:
+    patch:
+      summary: Validar documento.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Documento validado.
+  /documentos/{id}/estado:
+    patch:
+      summary: Cambiar estado documental.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Estado actualizado.
+  /documentos/{id}/versiones:
+    get:
+      summary: Historial de versiones.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Versiones.
+  /payments/initiate:
+    post:
+      summary: Crear transaccion de pago.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PaymentInitRequest"
+      responses:
+        "201":
+          description: Link/estado de pago.
+  /payments/obligacion/{id}:
+    get:
+      summary: Listar transacciones por obligacion.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Transacciones.
+  /payments/transfers:
+    get:
+      summary: Listar pagos por transferencia para revision administrativa.
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [PENDING_VERIFICATION, APPROVED, REJECTED]
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+        - in: query
+          name: size
+          schema: { type: integer, default: 25 }
+      responses:
+        "200":
+          description: Transferencias filtradas.
+  /payments/transfers/{id}:
+    get:
+      summary: Detalle de transferencia.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Transferencia.
+  /payments/transfers/{id}/history:
+    get:
+      summary: Historial de validaciones de transferencia.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Eventos de validacion.
+  /payments/transfers/{id}/support:
+    get:
+      summary: Soporte autenticado de transferencia.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Archivo de soporte.
+  /payments/transfers/{id}/receipt:
+    get:
+      summary: Recibo PDF de transferencia aprobada.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Recibo PDF.
+  /payments/transfers/{id}/approve:
+    patch:
+      summary: Aprobar transferencia, descontar saldo y generar recibo.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PaymentTransferReviewRequest"
+      responses:
+        "200":
+          description: Transferencia aprobada.
+  /payments/transfers/{id}/reject:
+    patch:
+      summary: Rechazar transferencia con observaciones.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PaymentTransferReviewRequest"
+      responses:
+        "200":
+          description: Transferencia rechazada.
+  /payments/webhooks/mercadopago:
+    post:
+      security: []
+      summary: Webhook MercadoPago con validacion x-signature.
+      responses:
+        "200":
+          description: Evento procesado.

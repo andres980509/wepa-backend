@@ -1,0 +1,45 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: wepa-postgres
+    environment:
+      POSTGRES_DB: wepa
+      POSTGRES_USER: wepa
+      POSTGRES_PASSWORD: wepa_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - wepa_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wepa -d wepa"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: .
+    container_name: wepa-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      APP_ENV: local
+      APP_PORT: 8080
+      DB_URL: jdbc:postgresql://postgres:5432/wepa
+      DB_USER: wepa
+      DB_PASSWORD: wepa_dev_password
+      JWT_SECRET: cambiar_este_secret_local_de_64_caracteres_para_desarrollo_wepa
+      UPLOAD_BASE_DIR: /var/wepa/uploads
+      DOCUMENT_STORAGE_PROVIDER: local
+      WEPA_PUBLIC_UPLOADS_ENABLED: "false"
+      WOMPI_WEBHOOK_SECRET: local_wompi_secret
+      EPAYCO_WEBHOOK_SECRET: local_epayco_secret
+      MERCADOPAGO_WEBHOOK_SECRET: local_mercadopago_secret
+    ports:
+      - "8080:8080"
+    volumes:
+      - wepa_uploads:/var/wepa/uploads
+
+volumes:
+  wepa_postgres_data:
+  wepa_uploads:
