@@ -119,7 +119,7 @@ public class App {
         RefreshTokenService refreshTokenService = new RefreshTokenService(refreshTokenDAO, appConfig);
         new MobileController(usuarioDao, integranteDao, obligacionDao, movimientoDao, documentService, refreshTokenService, pushTokenDAO).routes(app);
 
-        int port = appConfig.getInt("APP_PORT", 8080);
+        int port = appConfig.getInt("APP_PORT", appConfig.getInt("PORT", 8080));
         app.start(port);
 
         System.out.println("ERP WEPA listo en puerto " + port);
