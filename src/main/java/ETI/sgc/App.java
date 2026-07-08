@@ -32,6 +32,7 @@ import io.javalin.http.NotFoundResponse;
 import io.javalin.http.staticfiles.Location;
 import org.mindrot.jbcrypt.BCrypt;
 
+import java.util.Map;
 import java.util.Set;
 
 public class App {
@@ -76,6 +77,16 @@ public class App {
 
         configureErrors(app);
         configureSecurity(app);
+
+        app.get("/", ctx -> ctx.json(Map.of(
+                "app", "WEPA backend",
+                "status", "ok",
+                "environment", appConfig.get("APP_ENV", "local")
+        )));
+        app.get("/health", ctx -> ctx.json(Map.of(
+                "status", "ok",
+                "service", "wepa-backend"
+        )));
 
         Runtime.getRuntime().addShutdownHook(new Thread(Database::shutdown));
 
