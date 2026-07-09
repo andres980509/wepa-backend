@@ -94,7 +94,7 @@ public class App {
         new UsuarioController(usuarioDao).routes(app);
         new AdministracionController(conceptoDao).routes(app);
         new FinanzasController(Database.jdbi, obligacionDao, movimientoDao, validacionDao, appConfig).routes(app);
-        new IntegranteController(integranteDao, usuarioDao).routes(app);
+        new IntegranteController(integranteDao, usuarioDao, appConfig).routes(app);
         new EntidadController(entidadDao).routes(app);
         new PatrocinadorController(patrocinadorDao).routes(app);
         new ProveedorController(proveedorDao).routes(app);
@@ -197,3 +197,4 @@ public class App {
         System.err.println("ADVERTENCIA: usuario admin bootstrap creado. Cambiar credenciales inmediatamente.");
     }
 }
+

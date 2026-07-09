@@ -1,5 +1,6 @@
 package ETI.sgc.controller;
 
+import ETI.sgc.config.AppConfig;
 import ETI.sgc.dao.IntegranteDAO;
 import ETI.sgc.dao.UsuarioDAO;
 import ETI.sgc.dto.IntegranteRequest;
@@ -7,29 +8,51 @@ import ETI.sgc.error.ApiException;
 import ETI.sgc.model.Usuario;
 import ETI.sgc.security.Rbac;
 import io.javalin.Javalin;
+import io.javalin.http.UploadedFile;
 import org.mindrot.jbcrypt.BCrypt;
 
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 
 public class IntegranteController {
 
+    private static final Set<String> ALLOWED_PROFILE_PHOTO_MIME_TYPES = Set.of(
+            "image/png",
+            "image/jpeg",
+            "image/webp"
+    );
+
     private final IntegranteDAO dao;
     private final UsuarioDAO usuarioDao;
+    private final Path uploadBasePath;
+    private final long maxProfilePhotoSizeBytes;
 
     public IntegranteController(IntegranteDAO dao) {
-        this(dao, null);
+        this(dao, null, AppConfig.load());
     }
 
     public IntegranteController(IntegranteDAO dao, UsuarioDAO usuarioDao) {
+        this(dao, usuarioDao, AppConfig.load());
+    }
+
+    public IntegranteController(IntegranteDAO dao, UsuarioDAO usuarioDao, AppConfig appConfig) {
         this.dao = dao;
         this.usuarioDao = usuarioDao;
+        this.uploadBasePath = Path.of(appConfig.get("UPLOAD_BASE_DIR", "uploads")).toAbsolutePath().normalize();
+        this.maxProfilePhotoSizeBytes = appConfig.getLong(
+                "PROFILE_PHOTO_MAX_FILE_SIZE_BYTES",
+                appConfig.getLong("UPLOAD_MAX_FILE_SIZE_BYTES", 5L * 1024L * 1024L)
+        );
     }
 
     public void routes(Javalin app) {
 
-        // 🔹 CREAR
+        // CREAR
         app.post("/api/admin/integrantes", ctx -> {
             Rbac.requirePermission(ctx, Rbac.TERCEROS_GESTIONAR);
             IntegranteRequest req = ctx.bodyAsClass(IntegranteRequest.class);
@@ -43,13 +66,13 @@ public class IntegranteController {
             ctx.status(201).json(Map.of("id", id, "message", "Integrante creado exitosamente"));
         });
 
-        // 🔹 LISTAR
+        // LISTAR
         app.get("/api/admin/integrantes", ctx -> {
             Rbac.requirePermission(ctx, Rbac.TERCEROS_VER);
             ctx.json(dao.listar());
         });
 
-        // 🔹 LISTAR
+        // LISTAR
         app.get("/api/admin/integrantes2", ctx -> {
             Rbac.requirePermission(ctx, Rbac.TERCEROS_VER);
             ctx.json(dao.listar2());
@@ -57,7 +80,7 @@ public class IntegranteController {
 
 
 
-        // 🔹 POR ID
+        // POR ID
         app.get("/api/admin/integrantes/{id}", ctx -> {
             Rbac.requirePermission(ctx, Rbac.TERCEROS_VER);
             Long id = Long.parseLong(ctx.pathParam("id"));
@@ -172,13 +195,13 @@ public class IntegranteController {
             ctx.json(Map.of("message", "Usuario movil desasociado del integrante"));
         });
 
-        // 🔹 POR CODIGO (QR/NFC)
+        // POR CODIGO (QR/NFC)
         app.get("/api/admin/integrantes/codigo/{codigo}", ctx -> {
             Rbac.requirePermission(ctx, Rbac.TERCEROS_VER);
             ctx.json(dao.obtenerPorCodigo(ctx.pathParam("codigo")));
         });
 
-        // 🔹 ACTUALIZAR
+        // ACTUALIZAR
         app.put("/api/admin/integrantes/{id}", ctx -> {
             Rbac.requirePermission(ctx, Rbac.TERCEROS_GESTIONAR);
             Long id = Long.parseLong(ctx.pathParam("id"));
@@ -187,7 +210,7 @@ public class IntegranteController {
             ctx.json(Map.of("message", "Ficha actualizada correctamente"));
         });
 
-        // 🔹 CAMBIAR ESTADO (ACTIVO/INACTIVO)
+        // CAMBIAR ESTADO (ACTIVO/INACTIVO)
         app.patch("/api/admin/integrantes/{id}/estado", ctx -> {
             Rbac.requirePermission(ctx, Rbac.TERCEROS_GESTIONAR);
             Long id = Long.parseLong(ctx.pathParam("id"));
@@ -202,7 +225,7 @@ public class IntegranteController {
             dao.cambiarEstado(id, activo);
             ctx.json(Map.of("message", "Estado actualizado"));
         });
-// 🔹 SUBIR O CAMBIAR FOTO (Endpoint Independiente)
+        // SUBIR O CAMBIAR FOTO
         app.get("/api/admin/integrantes/{id}/foto", ctx -> {
             Rbac.requirePermission(ctx, Rbac.TERCEROS_VER);
             Long id = Long.parseLong(ctx.pathParam("id"));
@@ -212,9 +235,8 @@ public class IntegranteController {
                 throw new ApiException(404, "El integrante no tiene foto");
             }
 
-            Path uploads = Path.of("uploads").toAbsolutePath().normalize();
-            Path file = uploads.resolve(fotoUrl).normalize();
-            if (!file.startsWith(uploads) || !Files.exists(file)) {
+            Path file = uploadBasePath.resolve(fotoUrl).normalize();
+            if (!file.startsWith(uploadBasePath) || !Files.exists(file)) {
                 throw new ApiException(404, "Foto no encontrada");
             }
 
@@ -228,49 +250,78 @@ public class IntegranteController {
             Rbac.requirePermission(ctx, Rbac.TERCEROS_GESTIONAR);
             Long id = Long.parseLong(ctx.pathParam("id"));
             var uploadedFile = ctx.uploadedFile("foto");
+            validateProfilePhoto(uploadedFile);
 
             if (uploadedFile == null) {
-                ctx.status(400).json(Map.of("error", "No se seleccionó ninguna imagen"));
+                ctx.status(400).json(Map.of("error", "No se selecciono ninguna imagen"));
                 return;
             }
 
             // 1. LIMPIEZA: Obtener foto antigua y borrarla del disco
-            // Usamos el método obtener(id) de tu DAO que retorna un Map
+            // Usamos el metodo obtener(id) de tu DAO que retorna un Map
             Map<String, Object> integranteActual = (Map<String, Object>) dao.obtener(id);
 
             if (integranteActual != null && integranteActual.get("foto_url") != null) {
                 String fotoViejaRelativa = (String) integranteActual.get("foto_url");
-                // La ruta física es uploads + la ruta guardada en BD
-                java.io.File archivoParaBorrar = new java.io.File("uploads/" + fotoViejaRelativa);
-
-                if (archivoParaBorrar.exists()) {
-                    archivoParaBorrar.delete();
+                Path archivoParaBorrar = uploadBasePath.resolve(fotoViejaRelativa).normalize();
+                if (archivoParaBorrar.startsWith(uploadBasePath) && Files.exists(archivoParaBorrar)) {
+                    Files.deleteIfExists(archivoParaBorrar);
                     System.out.println("Archivo antiguo eliminado: " + fotoViejaRelativa);
                 }
             }
 
             // 2. PROCESAR NUEVA FOTO
             String carpetaRelativa = "perfiles/integrantes";
-            java.io.File uploadDir = new java.io.File("uploads/" + carpetaRelativa);
-            if (!uploadDir.exists()) uploadDir.mkdirs();
+            Path uploadDir = uploadBasePath.resolve(carpetaRelativa).normalize();
+            if (!uploadDir.startsWith(uploadBasePath)) {
+                throw new ApiException(400, "Ruta de foto invalida");
+            }
 
-            String extension = uploadedFile.extension();
-            String nombreArchivo = "perfil_" + id + "_" + System.currentTimeMillis() + extension;
+            String extension = extensionFor(uploadedFile);
+            String nombreArchivo = "perfil_" + id + "_" + UUID.randomUUID() + extension;
 
-            String rutaDisco = "uploads/" + carpetaRelativa + "/" + nombreArchivo;
-            String rutaBD = carpetaRelativa + "/" + nombreArchivo;
+            Path destino = uploadDir.resolve(nombreArchivo).normalize();
+            String rutaBD = uploadBasePath.relativize(destino).toString().replace('\\', '/');
 
-            // Guardar en disco
-            io.javalin.util.FileUtil.streamToFile(uploadedFile.content(), rutaDisco);
+            try {
+                Files.createDirectories(uploadDir);
+                try (InputStream input = uploadedFile.content()) {
+                    Files.copy(input, destino);
+                }
+            } catch (Exception e) {
+                throw new ApiException(500, "No se pudo guardar la foto: " + e.getMessage());
+            }
 
             // Actualizar BD
           dao.actualizarFoto(id, rutaBD);
 
             ctx.json(Map.of(
-                    "message", "Foto actualizada con éxito",
+                    "message", "Foto actualizada con exito",
                     "foto_url", rutaBD
             ));
         });
+    }
+
+    private void validateProfilePhoto(UploadedFile file) {
+        if (file == null) {
+            throw new ApiException(400, "No se selecciono ninguna imagen");
+        }
+        if (file.size() <= 0 || file.size() > maxProfilePhotoSizeBytes) {
+            throw new ApiException(400, "La foto supera el tamano maximo permitido");
+        }
+        String contentType = file.contentType() == null ? "" : file.contentType().toLowerCase(Locale.ROOT);
+        if (!ALLOWED_PROFILE_PHOTO_MIME_TYPES.contains(contentType)) {
+            throw new ApiException(400, "Formato de foto no permitido. Usa JPG, PNG o WEBP");
+        }
+    }
+
+    private String extensionFor(UploadedFile file) {
+        String contentType = file.contentType() == null ? "" : file.contentType().toLowerCase(Locale.ROOT);
+        return switch (contentType) {
+            case "image/png" -> ".png";
+            case "image/webp" -> ".webp";
+            default -> ".jpg";
+        };
     }
 
     private void requireAdmin(String role) {
